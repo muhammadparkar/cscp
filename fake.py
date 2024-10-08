@@ -3,6 +3,7 @@ from math import gcd
 import streamlit as st
 import csv
 import os
+import pandas as pd
 
 # Miller-Rabin primality test for prime generation
 def is_prime(n, k=5):  # number of tests
@@ -118,6 +119,11 @@ def decrypt(private_key, ciphertext):
     plaintext = (l_u * mu) % n
     return plaintext
 
+
+def string_to_number(s):
+# Function to convert string to a number (for encryption)
+    return int.from_bytes(s.encode(), 'big')
+
 # Function to store encrypted data in a CSV file
 def store_encrypted_data_csv(filename, name, gender, encrypted_data):
     # Check if the file exists to write headers only once
@@ -130,15 +136,26 @@ def store_encrypted_data_csv(filename, name, gender, encrypted_data):
         if not file_exists:
             writer.writerow(['Name', 'Gender', 'Dosage Name Ciphertext', 'Age Ciphertext', 'Dosage Ciphertext', 'Price Ciphertext'])
 
+        # Convert encrypted data to strings before writing
+        encrypted_data_str = [str(item) for item in encrypted_data]
+        
         # Write the user's encrypted data
         writer.writerow([
             name, gender,
-            encrypted_data[0], encrypted_data[1], encrypted_data[2], encrypted_data[3]
+            encrypted_data_str[0], encrypted_data_str[1], encrypted_data_str[2], encrypted_data_str[3]
         ])
 
-# Function to convert string to a number (for encryption)
-def string_to_number(s):
-    return int.from_bytes(s.encode(), 'big')
+# Load existing data from CSV (if available)
+def load_data_from_csv(filename):
+    if os.path.isfile(filename):
+        return pd.read_csv(filename, converters={
+            'Dosage Name Ciphertext': str,
+            'Age Ciphertext': str,
+            'Dosage Ciphertext': str,
+            'Price Ciphertext': str
+        })
+    else:
+        return pd.DataFrame(columns=['Name', 'Gender', 'Dosage Name Ciphertext', 'Age Ciphertext', 'Dosage Ciphertext', 'Price Ciphertext'])
 
 # Streamlit app for pharmacy data collection
 st.title("Pharmacy Data Collection with Paillier Homomorphic Encryption (CSV Storage)")
@@ -146,10 +163,19 @@ st.title("Pharmacy Data Collection with Paillier Homomorphic Encryption (CSV Sto
 # Generate Paillier keys
 public_key, private_key = generate_paillier_keypair(bits=128)  # Use smaller bits for demonstration purposes
 
-# Create a single tab for encrypting data
+# Load the data from CSV
+filename = "pharmacy_data.csv"
+data_df = load_data_from_csv(filename)
+
+# Display existing data as a big table
+st.header("Stored Encrypted Data")
+st.write("The data is encrypted for privacy protection.")
+st.dataframe(data_df)
+
+# Input form for new data
 st.header("Enter Data for Encryption")
 
-# Input for user's biodata
+# Create a form for user's biodata and medicine details
 with st.form("user_form"):
     st.header("Enter Your Biodata")
     name = st.text_input("Name")
@@ -180,15 +206,22 @@ if submitted:
         encrypted_data = [encrypted_dosage_name, encrypted_age, encrypted_dosage, encrypted_price]
 
         # Store encrypted data in a CSV file
-        filename = "pharmacy_data.csv"
         store_encrypted_data_csv(filename, name, gender, encrypted_data)
+
+        # Append the new row to the DataFrame (convert large integers to strings for display)
+        new_row = pd.DataFrame({
+            'Name': [name], 
+            'Gender': [gender], 
+            'Dosage Name Ciphertext': [str(encrypted_dosage_name)], 
+            'Age Ciphertext': [str(encrypted_age)], 
+            'Dosage Ciphertext': [str(encrypted_dosage)], 
+            'Price Ciphertext': [str(encrypted_price)]
+        })
+        data_df = pd.concat([data_df, new_row], ignore_index=True)
 
         st.success(f"Data encrypted and stored in {filename}")
 
-        # Show encrypted data in the app
-        st.write("Encrypted Dosage Name:", encrypted_dosage_name)
-        st.write("Encrypted Age:", encrypted_age)
-        st.write("Encrypted Dosage:", encrypted_dosage)
-        st.write("Encrypted Price:", encrypted_price)
+        # Show updated data
+        st.dataframe(data_df)
     else:
         st.error("Please fill in all the fields!")

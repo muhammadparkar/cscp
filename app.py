@@ -229,11 +229,6 @@ if submitted:
         st.write("Encrypted Dosage:", encrypted_dosage)
         st.write("Encrypted Price:", encrypted_price)
 
-        # Show decrypted data
-        st.write("Decrypted Age:", decrypted_age)
-        st.write("Decrypted Dosage:", decrypted_dosage)
-        st.write("Decrypted Price:", decrypted_price)
-
         # Store the data in the database
         store_data_in_db(name, gender, encrypted_data, n)
 

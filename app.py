@@ -3,6 +3,20 @@ from math import gcd
 import streamlit as st
 import csv
 import os
+import subprocess
+
+def store_data_in_db(name, gender, encrypted_data, n):
+    # Convert each item in encrypted_data to a string and pass n as an argument
+    command = ["node", "prisma_api.js", name, gender, *map(str, encrypted_data), str(n)]
+    
+    # Run the command and handle any errors
+    try:
+        result = subprocess.run(command, check=True, capture_output=True, text=True)
+        print("Data successfully stored in the database.")
+        print("Output:", result.stdout)
+    except subprocess.CalledProcessError as e:
+        print("Failed to store data in the database.")
+        print("Error:", e.stderr)
 
 # Miller-Rabin primality test for prime generation
 def is_prime(n, k=5):  # number of tests
@@ -84,7 +98,7 @@ def generate_paillier_keypair(bits=512):
     public_key = (n, g)
     private_key = (lambda_val, mu, n)
     
-    return public_key, private_key
+    return public_key, private_key, n
 
 # Function to encrypt a message
 def encrypt(public_key, plaintext):
@@ -100,26 +114,8 @@ def encrypt(public_key, plaintext):
     c = (pow(g, plaintext, n_sq) * pow(r, n, n_sq)) % n_sq
     return c
 
-# Function to decrypt a ciphertext
-def decrypt(private_key, ciphertext):
-    lambda_val, mu, n = private_key
-    n_sq = n * n
-    
-    # Step 1: Compute u = (c^lambda mod n^2)
-    u = pow(ciphertext, lambda_val, n_sq)
-    
-    # Step 2: Compute L(u) = (u - 1) / n
-    def L(u, n):
-        return (u - 1) // n
-    
-    l_u = L(u, n)
-    
-    # Step 3: Compute m = (L(u) * mu) mod n
-    plaintext = (l_u * mu) % n
-    return plaintext
-
 # Function to store encrypted data in a CSV file
-def store_encrypted_data_csv(filename, name, gender, encrypted_data):
+def store_encrypted_data_csv(filename, name, gender, encrypted_data, decrypted_data):
     # Check if the file exists to write headers only once
     file_exists = os.path.isfile(filename)
 
@@ -128,23 +124,59 @@ def store_encrypted_data_csv(filename, name, gender, encrypted_data):
 
         # Write header if the file doesn't already exist
         if not file_exists:
-            writer.writerow(['Name', 'Gender', 'Dosage Name Ciphertext', 'Age Ciphertext', 'Dosage Ciphertext', 'Price Ciphertext'])
+            writer.writerow(['Name', 'Gender', 'Dosage Name Ciphertext', 'Age Ciphertext', 'Dosage Ciphertext', 'Price Ciphertext',
+                             'Decrypted Age', 'Decrypted Dosage', 'Decrypted Price'])
 
-        # Write the user's encrypted data
+        # Write the user's encrypted and decrypted data
         writer.writerow([
             name, gender,
-            encrypted_data[0], encrypted_data[1], encrypted_data[2], encrypted_data[3]
+            encrypted_data[0], encrypted_data[1], encrypted_data[2], encrypted_data[3],
+            decrypted_data[0], decrypted_data[1], decrypted_data[2]
         ])
 
 # Function to convert string to a number (for encryption)
 def string_to_number(s):
     return int.from_bytes(s.encode(), 'big')
 
+# Function to decrypt a ciphertext
+def decrypt(private_key, ciphertext):
+    lambda_val, mu, n = private_key
+    n_sq = n * n
+    
+    # Step 1: Compute L(c^lambda mod n^2)
+    c_lambda = pow(ciphertext, lambda_val, n_sq)
+    l_value = (c_lambda - 1) // n
+    
+    # Step 2: Compute the plaintext as L(c^lambda mod n^2) * mu mod n
+    plaintext = (l_value * mu) % n
+    return plaintext
+
+# Function to read encrypted data from CSV and calculate sum of decrypted prices
+def calculate_decrypted_total_price(filename, private_key):
+    total_price = 0
+    with open(filename, mode='r') as file:
+        reader = csv.DictReader(file)
+        for row in reader:
+            try:
+                # Get the encrypted price from the row
+                encrypted_price = int(row['Price Ciphertext'])
+
+                # Decrypt the encrypted price
+                decrypted_price = decrypt(private_key, encrypted_price)
+
+                # Add to the total price
+                total_price += decrypted_price
+            except KeyError:
+                print("Error: Missing expected columns in CSV file.")
+                break
+    
+    return total_price
+
 # Streamlit app for pharmacy data collection
 st.title("Pharmacy Data Collection with Paillier Homomorphic Encryption (CSV Storage)")
 
 # Generate Paillier keys
-public_key, private_key = generate_paillier_keypair(bits=128)  # Use smaller bits for demonstration purposes
+public_key, private_key, n = generate_paillier_keypair(bits=128)  # Use smaller bits for demonstration purposes
 
 # Create a single tab for encrypting data
 st.header("Enter Data for Encryption")
@@ -176,19 +208,35 @@ if submitted:
         encrypted_dosage = encrypt(public_key, int(dosage))
         encrypted_price = encrypt(public_key, int(price))
 
+        # Decrypt sensitive data (dosage name, age, dosage, price)
+        decrypted_age = decrypt(private_key, encrypted_age)
+        decrypted_dosage = decrypt(private_key, encrypted_dosage)
+        decrypted_price = decrypt(private_key, encrypted_price)
+
         # Prepare encrypted data for storage
         encrypted_data = [encrypted_dosage_name, encrypted_age, encrypted_dosage, encrypted_price]
+        decrypted_data = [decrypted_age, decrypted_dosage, decrypted_price]
 
-        # Store encrypted data in a CSV file
+        # Store encrypted and decrypted data in a CSV file
         filename = "pharmacy_data.csv"
-        store_encrypted_data_csv(filename, name, gender, encrypted_data)
+        store_encrypted_data_csv(filename, name, gender, encrypted_data, decrypted_data)
 
-        st.success(f"Data encrypted and stored in {filename}")
+        st.success("Data encrypted and stored in Database!")
 
         # Show encrypted data in the app
         st.write("Encrypted Dosage Name:", encrypted_dosage_name)
         st.write("Encrypted Age:", encrypted_age)
         st.write("Encrypted Dosage:", encrypted_dosage)
         st.write("Encrypted Price:", encrypted_price)
+
+        # Show decrypted data
+        st.write("Decrypted Age:", decrypted_age)
+        st.write("Decrypted Dosage:", decrypted_dosage)
+        st.write("Decrypted Price:", decrypted_price)
+
+        # Store the data in the database
+        store_data_in_db(name, gender, encrypted_data, n)
+
+       
     else:
         st.error("Please fill in all the fields!")

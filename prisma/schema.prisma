@@ -8,11 +8,19 @@ generator client {
 }
 
 model PharmacyData {
-  id               Int      @id @default(autoincrement())
-  name             String
-  gender           String
-  dosageNameCipher String
-  ageCipher        String
-  dosageCipher     String
-  priceCipher      String
+  id         Int    @id @default(autoincrement())
+  name       String
+  gender     String
+  dosageName String
+  age        String
+  dosage     String
+  price      String
+}
+
+model TotalPrice {
+  id         Int    @id @default(autoincrement())
+  name       String @unique
+  totalPrice String // Encrypted total price (ciphertext)
+  n          String // Public key n value (used for homomorphic operations)
+  n_sq       String // n^2 value (used for homomorphic operations)
 }

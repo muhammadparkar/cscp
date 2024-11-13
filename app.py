@@ -114,24 +114,43 @@ def encrypt(public_key, plaintext):
     c = (pow(g, plaintext, n_sq) * pow(r, n, n_sq)) % n_sq
     return c
 
-# Function to store encrypted data in a CSV file
+# Function to store encrypted data in a CSV file with price summation
 def store_encrypted_data_csv(filename, name, gender, encrypted_data, decrypted_data):
-    # Check if the file exists to write headers only once
+    # Check if the file exists to read and write data
     file_exists = os.path.isfile(filename)
+    
+    # If the file exists, read the existing rows and check if the name exists
+    total_price = 0
+    existing_data = []
 
+    if file_exists:
+        with open(filename, mode='r', newline='') as file:
+            reader = csv.DictReader(file)
+            existing_data = [row for row in reader]
+        
+        # Calculate total price for the same name if it exists
+        for row in existing_data:
+            if row['Name'] == name:
+                total_price += float(row['Decrypted Price'])
+    
+    # Add the current price to the total
+    total_price += decrypted_data[2]  # Assuming decrypted_data[2] is the decrypted price
+    
+    # Write data to the CSV
     with open(filename, mode='a', newline='') as file:
         writer = csv.writer(file)
 
-        # Write header if the file doesn't already exist
+        # Write header if the file doesn't exist
         if not file_exists:
-            writer.writerow(['Name', 'Gender', 'Dosage Name Ciphertext', 'Age Ciphertext', 'Dosage Ciphertext', 'Price Ciphertext',
-                             'Decrypted Age', 'Decrypted Dosage', 'Decrypted Price'])
+            writer.writerow(['Name', 'Gender', 'Dosage Name Ciphertext', 'Age Ciphertext', 'Dosage Ciphertext', 'Price Ciphertext', 
+                             'Decrypted Age', 'Decrypted Dosage', 'Decrypted Price', 'Total Price'])
 
-        # Write the user's encrypted and decrypted data
+        # Write the user's encrypted and decrypted data along with total price
         writer.writerow([
             name, gender,
             encrypted_data[0], encrypted_data[1], encrypted_data[2], encrypted_data[3],
-            decrypted_data[0], decrypted_data[1], decrypted_data[2]
+            decrypted_data[0], decrypted_data[1], decrypted_data[2],
+            total_price  # Add the total price for the same name
         ])
 
 # Function to convert string to a number (for encryption)
@@ -217,21 +236,20 @@ if submitted:
         encrypted_data = [encrypted_dosage_name, encrypted_age, encrypted_dosage, encrypted_price]
         decrypted_data = [decrypted_age, decrypted_dosage, decrypted_price]
 
-        # Store encrypted and decrypted data in a CSV file
-        filename = "pharmacy_data.csv"
-        store_encrypted_data_csv(filename, name, gender, encrypted_data, decrypted_data)
-
-        st.success("Data encrypted and stored in Database!")
-
-        # Show encrypted data in the app
-        st.write("Encrypted Dosage Name:", encrypted_dosage_name)
-        st.write("Encrypted Age:", encrypted_age)
-        st.write("Encrypted Dosage:", encrypted_dosage)
-        st.write("Encrypted Price:", encrypted_price)
-
-        # Store the data in the database
+        # Store the encrypted data in the database (using Prisma API)
         store_data_in_db(name, gender, encrypted_data, n)
 
+        # CSV file path to store data
+        filename = "pharmacy_data.csv"
+        
+        # Store encrypted data and total price in CSV
+        store_encrypted_data_csv(filename, name, gender, encrypted_data, decrypted_data)
+        
+        
+        st.success(f"Data for {name} successfully stored in database.")
+
+        # Show the sum of decrypted prices from the CSV
+        total_price = calculate_decrypted_total_price(filename, private_key)
        
     else:
-        st.error("Please fill in all the fields!")
+        st.warning("Please enter all the required fields.")
